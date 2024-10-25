@@ -8,22 +8,21 @@ import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.ktor.client.request.*
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.*
+import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
-import org.jetbrains.compose.ui.tooling.preview.Preview
 import um.edu.ar.network.NetworkUtils.httpClient
 import um.edu.ar.network.model.*
 
 @Composable
-@Preview
 fun App() {
     MaterialTheme {
         var dispositivos by remember { mutableStateOf(listOf<Dispositivo>()) }
@@ -31,19 +30,16 @@ fun App() {
         var adicionales by remember { mutableStateOf(listOf<Adicional>()) }
         var caracteristicas by remember { mutableStateOf(listOf<Caracteristica>()) }
         var personalizaciones by remember { mutableStateOf(listOf<Personalizacion>()) }
+        var opciones by remember { mutableStateOf(listOf<Opcion>()) }
         var totalPrice by remember { mutableStateOf(0.0) }
         var isLoading by remember { mutableStateOf(false) }
         var errorMessage by remember { mutableStateOf<String?>(null) }
-
-        // Token de autenticación
         val token = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTcyOTg4MjY1NCwiYXV0aCI6IlJPTEVfQURNSU4gUk9MRV9VU0VSIiwiaWF0IjoxNzI5Nzk2MjU0fQ.Dm6dSnk9dp4MlSIBeyPRSxLxmG30XLnjQWPWl-XzEOTIzGXgGGvakTGM4N_yWne2l5F7ds6wMe1tqWzB77uOQg"
-
-        val scrollState = rememberScrollState() // Scroll state para manejar el desplazamiento vertical
 
         Column(
             Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState), // Activamos el scroll vertical
+                .verticalScroll(rememberScrollState()), // Permite scroll
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Botón para cargar dispositivos
@@ -55,7 +51,7 @@ fun App() {
                         val urlDispositivos = "http://10.0.2.2:8080/api/dispositivos"
                         val response = httpClient.get(urlDispositivos) {
                             headers {
-                                append(HttpHeaders.Authorization, "Bearer $token")
+                                append("Authorization", "Bearer $token")
                             }
                         }
                         dispositivos = Json.decodeFromString(response.bodyAsText())
@@ -79,7 +75,7 @@ fun App() {
 
                 // Mostrar los dispositivos cargados
                 dispositivos.forEach { dispositivo ->
-                    DispositivoCard(dispositivo, selectedDispositivo, onSelected = { selected ->
+                    DispositivoCard(dispositivo, selectedDispositivo) { selected ->
                         selectedDispositivo = selected
                         totalPrice = selected.precioBase ?: 0.0
 
@@ -93,12 +89,16 @@ fun App() {
                                     .filter { it.dispositivo.id == selectedDispositivo!!.id }
 
                                 personalizaciones = fetchData<List<Personalizacion>>("http://10.0.2.2:8080/api/personalizacions", token)
-                                    .filter { it.dispositivo.id == selectedDispositivo!!.id }
+                                    .filter { it.dispositivo?.id == selectedDispositivo!!.id }
+
+
+                                opciones = fetchData<List<Opcion>>("http://10.0.2.2:8080/api/opcions", token)
+                                    .filter { opcion -> personalizaciones.any { it.id == opcion.personalizacion.id } }
                             } catch (e: Exception) {
                                 errorMessage = "Error cargando datos: ${e.message}"
                             }
                         }
-                    })
+                    }
                 }
             }
 
@@ -109,18 +109,26 @@ fun App() {
                 }
                 Text("Adicionales disponibles:")
                 adicionales.forEach { adicional ->
-                    AdicionalCard(adicional) {
-                        totalPrice += adicional.precio
+                    AdicionalCard(adicional) { adicionalSelected, isSelected ->
+                        totalPrice += if (isSelected) adicionalSelected.precio ?: 0.0 else -(adicionalSelected.precio ?: 0.0)
                     }
                 }
+
                 Text("Personalizaciones disponibles:")
                 personalizaciones.forEach { personalizacion ->
-                    PersonalizacionCard(personalizacion)
+                    PersonalizacionCard(personalizacion, opciones, onOptionSelected = { opcion, isSelected ->
+                        totalPrice += if (isSelected) opcion.precioAdicional ?: 0.0 else -(opcion.precioAdicional ?: 0.0)
+                    })
                 }
             }
 
             // Mostrar el precio total actualizado
-            Text("Total: $totalPrice USD")
+            Text(
+                "Total: $totalPrice USD",
+                fontSize = 24.sp, // Cambia el número por el tamaño deseado
+                fontWeight = FontWeight.Bold
+            )
+
         }
     }
 }
@@ -135,9 +143,9 @@ fun DispositivoCard(dispositivo: Dispositivo, selectedDispositivo: Dispositivo?,
         horizontalAlignment = Alignment.Start
     ) {
         Text("Código: ${dispositivo.codigo}", style = MaterialTheme.typography.h6)
-        Text("Nombre: ${dispositivo.nombre}", style = MaterialTheme.typography.body1)
-        Text("Descripción: ${dispositivo.descripcion}", style = MaterialTheme.typography.body2)
-        Text("Precio: ${dispositivo.precioBase} ${dispositivo.moneda}", style = MaterialTheme.typography.body2)
+        Text("Nombre: ${dispositivo.nombre ?: "Sin nombre"}", style = MaterialTheme.typography.body1)
+        Text("Descripción: ${dispositivo.descripcion ?: "Sin descripción"}", style = MaterialTheme.typography.body2)
+        Text("Precio: ${dispositivo.precioBase ?: "N/A"} ${dispositivo.moneda ?: "N/A"}", style = MaterialTheme.typography.body2)
         Divider()
     }
 }
@@ -150,39 +158,71 @@ fun CaracteristicaCard(caracteristica: Caracteristica) {
             .padding(16.dp),
         horizontalAlignment = Alignment.Start
     ) {
-        Text("Nombre: ${caracteristica.nombre}", style = MaterialTheme.typography.body1)
-        Text("Descripción: ${caracteristica.descripcion}", style = MaterialTheme.typography.body2)
+        Text("Nombre: ${caracteristica.nombre ?: "Sin nombre"}", style = MaterialTheme.typography.body1)
+        Text("Descripción: ${caracteristica.descripcion ?: "Sin descripción"}", style = MaterialTheme.typography.body2)
         Divider()
     }
 }
 
 @Composable
-fun AdicionalCard(adicional: Adicional, onSelected: () -> Unit) {
+fun AdicionalCard(adicional: Adicional, onSelected: (Adicional, Boolean) -> Unit) {
+    var isSelected by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = isSelected,
+            onCheckedChange = { checked ->
+                isSelected = checked
+                // Lógica de suma o resta dependiendo del estado seleccionado
+                onSelected(adicional, checked)
+            }
+        )
+        Text("Nombre: ${adicional.nombre ?: "Sin nombre"}", style = MaterialTheme.typography.body1)
+        Text("Precio: ${adicional.precio ?: "N/A"} USD", style = MaterialTheme.typography.body2)
+    }
+    Divider()
+}
+
+
+
+
+@Composable
+fun PersonalizacionCard(personalizacion: Personalizacion, opciones: List<Opcion>, onOptionSelected: (Opcion, Boolean) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp)
-            .clickable { onSelected() },
-        horizontalAlignment = Alignment.Start
     ) {
-        Text("Nombre: ${adicional.nombre}", style = MaterialTheme.typography.body1)
-        Text("Precio: ${adicional.precio} USD", style = MaterialTheme.typography.body2)
+        Text("Personalización: ${personalizacion.nombre ?: "Sin nombre"}", style = MaterialTheme.typography.body1)
+        opciones.filter { it.personalizacion?.id == personalizacion.id }.forEach { opcion ->
+            OpcionCard(opcion, onOptionSelected)
+        }
         Divider()
     }
 }
 
 @Composable
-fun PersonalizacionCard(personalizacion: Personalizacion) {
-    Column(
+fun OpcionCard(opcion: Opcion, onOptionSelected: (Opcion, Boolean) -> Unit) {
+    var isSelected by remember { mutableStateOf(false) }
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp),
-        horizontalAlignment = Alignment.Start
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("Nombre: ${personalizacion.nombre}", style = MaterialTheme.typography.body1)
-        Divider()
+        Checkbox(checked = isSelected, onCheckedChange = { checked ->
+            isSelected = checked
+            // Lógica de sumar o restar dependiendo si está seleccionado o no
+            onOptionSelected(opcion, checked)
+        })
+        Text("Opción: ${opcion.nombre ?: "Sin nombre"} - ${opcion.precioAdicional ?: "N/A"} USD", style = MaterialTheme.typography.body2)
     }
 }
+
 
 // Función genérica para obtener datos de la API
 suspend inline fun <reified T> fetchData(endpoint: String, token: String): T {
@@ -192,8 +232,7 @@ suspend inline fun <reified T> fetchData(endpoint: String, token: String): T {
                 append(HttpHeaders.Authorization, "Bearer $token")
             }
         }
-        // Configuramos el JSON para ignorar las claves desconocidas
-        val json = Json { ignoreUnknownKeys = true }
+        val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
         json.decodeFromString(response.bodyAsText())
     } catch (e: Exception) {
         throw e

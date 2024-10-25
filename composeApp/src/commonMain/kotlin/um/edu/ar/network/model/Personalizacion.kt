@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class Personalizacion(
     val id: Int,
-    val nombre: String,
-    val descripcion: String,
-    val dispositivo: Dispositivo
+    val nombre: String? = null,
+    val descripcion: String? = null,
+    val dispositivo: Dispositivo? = null
 )
