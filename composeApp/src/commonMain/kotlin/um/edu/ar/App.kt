@@ -18,6 +18,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import um.edu.ar.network.NetworkUtils.httpClient
 import um.edu.ar.network.model.*
@@ -34,7 +36,7 @@ fun App() {
         var totalPrice by remember { mutableStateOf(0.0) }
         var isLoading by remember { mutableStateOf(false) }
         var errorMessage by remember { mutableStateOf<String?>(null) }
-        val token = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTcyOTg4MjY1NCwiYXV0aCI6IlJPTEVfQURNSU4gUk9MRV9VU0VSIiwiaWF0IjoxNzI5Nzk2MjU0fQ.Dm6dSnk9dp4MlSIBeyPRSxLxmG30XLnjQWPWl-XzEOTIzGXgGGvakTGM4N_yWne2l5F7ds6wMe1tqWzB77uOQg"
+        val token = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTcyOTk3NDg1NywiYXV0aCI6IlJPTEVfQURNSU4gUk9MRV9VU0VSIiwiaWF0IjoxNzI5ODg4NDU3fQ.wQRbRDNKuC9_pgwlgS3CSNUFd_ukRl2HpyagmIU48-QI9Vz3p10j_-u-JDvXBhUaHVlVFUrfC3zjApDkLb73mA"
 
         Column(
             Modifier
@@ -91,7 +93,6 @@ fun App() {
                                 personalizaciones = fetchData<List<Personalizacion>>("http://10.0.2.2:8080/api/personalizacions", token)
                                     .filter { it.dispositivo?.id == selectedDispositivo!!.id }
 
-
                                 opciones = fetchData<List<Opcion>>("http://10.0.2.2:8080/api/opcions", token)
                                     .filter { opcion -> personalizaciones.any { it.id == opcion.personalizacion.id } }
                             } catch (e: Exception) {
@@ -129,7 +130,17 @@ fun App() {
                 fontWeight = FontWeight.Bold
             )
             Button(
-                onClick = { println("Compra finalizada con un total de $totalPrice USD") },
+                onClick = {
+                    if (selectedDispositivo != null) {
+                        concretarVenta(
+                            dispositivo = selectedDispositivo!!,
+                            adicionales = adicionales.filter { it.isSelected }, // Filtrar adicionales seleccionados
+                            personalizaciones = personalizaciones.filter { it.isSelected }, // Filtrar personalizaciones seleccionadas
+                            precioFinal = totalPrice,
+                            token = token
+                        )
+                    }
+                },
                 enabled = selectedDispositivo != null, // Habilitado si hay un dispositivo seleccionado
                 modifier = Modifier
                     .padding(16.dp)
@@ -144,8 +155,6 @@ fun App() {
                     fontWeight = FontWeight.Bold
                 )
             }
-
-
         }
     }
 }
@@ -204,9 +213,6 @@ fun AdicionalCard(adicional: Adicional, onSelected: (Adicional, Boolean) -> Unit
     Divider()
 }
 
-
-
-
 @Composable
 fun PersonalizacionCard(personalizacion: Personalizacion, opciones: List<Opcion>, onOptionSelected: (Opcion, Boolean) -> Unit) {
     Column(
@@ -240,6 +246,37 @@ fun OpcionCard(opcion: Opcion, onOptionSelected: (Opcion, Boolean) -> Unit) {
     }
 }
 
+// Funcionalidad para finalizar la compra
+fun concretarVenta(
+    dispositivo: Dispositivo,
+    adicionales: List<Adicional>,
+    personalizaciones: List<Personalizacion>,
+    precioFinal: Double,
+    token: String
+) {
+    val venta = Venta(
+        fechaVenta = Clock.System.now().toString(),
+        precioFinal = precioFinal,
+        dispositivo = dispositivo,
+        personalizaciones = personalizaciones,
+        adicionales = adicionales
+    )
+
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val urlVentas = "http://10.0.2.2:8080/api/ventas"
+            httpClient.post(urlVentas) {
+                headers {
+                    append(HttpHeaders.Authorization, "Bearer $token")
+                    append(HttpHeaders.ContentType, "application/json")
+                }
+                setBody(Json.encodeToString(venta))
+            }
+        } catch (e: Exception) {
+            println("Error al realizar la venta: ${e.message}")
+        }
+    }
+}
 
 // Función genérica para obtener datos de la API
 suspend inline fun <reified T> fetchData(endpoint: String, token: String): T {

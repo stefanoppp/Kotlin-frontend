@@ -14,10 +14,12 @@ androidx-test-junit = "1.2.1"
 compose-plugin = "1.6.11"
 junit = "4.13.2"
 kotlin = "2.0.20"
+kotlinxDatetime = "0.4.0"
 ktor="2.3.11"
 uiToolingPreviewAndroid = "1.7.4"
 [libraries]
 
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinxDatetime" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
