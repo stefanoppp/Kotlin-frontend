@@ -128,6 +128,23 @@ fun App() {
                 fontSize = 24.sp, // Cambia el número por el tamaño deseado
                 fontWeight = FontWeight.Bold
             )
+            Button(
+                onClick = { println("Compra finalizada con un total de $totalPrice USD") },
+                enabled = selectedDispositivo != null, // Habilitado si hay un dispositivo seleccionado
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth(), // Ajusta el tamaño del botón
+                colors = ButtonDefaults.buttonColors(
+                    backgroundColor = MaterialTheme.colors.primary // Cambia el color si es necesario
+                )
+            ) {
+                Text(
+                    text = "Finalizar Compra",
+                    fontSize = 18.sp, // Ajusta el tamaño del texto si es necesario
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
 
         }
     }
