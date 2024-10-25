@@ -9,7 +9,9 @@ import kotlinx.serialization.json.Json
 object NetworkUtils {
     val httpClient= HttpClient{
         install(ContentNegotiation){
-            json(json = Json { ignoreUnknownKeys = true }, contentType = ContentType.Any)
+            json(json = Json { ignoreUnknownKeys = true
+                                coerceInputValues = true
+                                }, contentType = ContentType.Any)
         }
     }
 }
