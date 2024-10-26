@@ -9,5 +9,6 @@ data class Opcion(
     val nombre: String,
     val descripcion: String,
     val precioAdicional: Double,
-    val personalizacion: Personalizacion
+    val personalizacion: Personalizacion,
+    var isSelected: Boolean = false
 )

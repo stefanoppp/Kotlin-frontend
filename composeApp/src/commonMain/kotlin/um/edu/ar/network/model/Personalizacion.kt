@@ -8,5 +8,6 @@ data class Personalizacion(
     val nombre: String? = null,
     val descripcion: String? = null,
     val dispositivo: Dispositivo? = null,
-    var isSelected: Boolean = false
+    var isSelected: Boolean = false,
+    var opciones: List<Opcion> = listOf()
 )

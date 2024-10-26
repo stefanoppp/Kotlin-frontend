@@ -18,7 +18,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import um.edu.ar.network.NetworkUtils.httpClient
@@ -36,7 +39,7 @@ fun App() {
         var totalPrice by remember { mutableStateOf(0.0) }
         var isLoading by remember { mutableStateOf(false) }
         var errorMessage by remember { mutableStateOf<String?>(null) }
-        val token = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTcyOTk3NDg1NywiYXV0aCI6IlJPTEVfQURNSU4gUk9MRV9VU0VSIiwiaWF0IjoxNzI5ODg4NDU3fQ.wQRbRDNKuC9_pgwlgS3CSNUFd_ukRl2HpyagmIU48-QI9Vz3p10j_-u-JDvXBhUaHVlVFUrfC3zjApDkLb73mA"
+        val token = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTczMDAwMDgzOCwiYXV0aCI6IlJPTEVfQURNSU4gUk9MRV9VU0VSIiwiaWF0IjoxNzI5OTE0NDM4fQ.j6Hbdqt8s9C9yecFnvoFWHplgJF5lhX2hBLOzImUpR1XiAFror8Y-BPOKsp6YqbNP4xuljpLAcp1KWQWo9e8Cg"
 
         Column(
             Modifier
@@ -111,14 +114,16 @@ fun App() {
                 Text("Adicionales disponibles:")
                 adicionales.forEach { adicional ->
                     AdicionalCard(adicional) { adicionalSelected, isSelected ->
-                        totalPrice += if (isSelected) adicionalSelected.precio ?: 0.0 else -(adicionalSelected.precio ?: 0.0)
+                        adicionalSelected.isSelected = isSelected
+                        totalPrice += if (isSelected) adicionalSelected.precio else -(adicionalSelected.precio)
                     }
                 }
 
                 Text("Personalizaciones disponibles:")
                 personalizaciones.forEach { personalizacion ->
                     PersonalizacionCard(personalizacion, opciones, onOptionSelected = { opcion, isSelected ->
-                        totalPrice += if (isSelected) opcion.precioAdicional ?: 0.0 else -(opcion.precioAdicional ?: 0.0)
+                        opcion.isSelected = isSelected
+                        totalPrice += if (isSelected) opcion.precioAdicional else -(opcion.precioAdicional)
                     })
                 }
             }
@@ -135,7 +140,9 @@ fun App() {
                         concretarVenta(
                             dispositivo = selectedDispositivo!!,
                             adicionales = adicionales.filter { it.isSelected }, // Filtrar adicionales seleccionados
-                            personalizaciones = personalizaciones.filter { it.isSelected }, // Filtrar personalizaciones seleccionadas
+                            personalizaciones = personalizaciones.map { personalizacion ->
+                                personalizacion.copy(opciones = personalizacion.opciones.filter { it.isSelected })
+                            }, // Filtrar personalizaciones con opciones seleccionadas
                             precioFinal = totalPrice,
                             token = token
                         )
@@ -215,22 +222,43 @@ fun AdicionalCard(adicional: Adicional, onSelected: (Adicional, Boolean) -> Unit
 
 @Composable
 fun PersonalizacionCard(personalizacion: Personalizacion, opciones: List<Opcion>, onOptionSelected: (Opcion, Boolean) -> Unit) {
+    // Mantenemos una lista mutable de las opciones seleccionadas
+    var opcionesSeleccionadas by remember { mutableStateOf(personalizacion.opciones.filter { it.isSelected }) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp)
     ) {
         Text("Personalización: ${personalizacion.nombre ?: "Sin nombre"}", style = MaterialTheme.typography.body1)
-        opciones.filter { it.personalizacion?.id == personalizacion.id }.forEach { opcion ->
-            OpcionCard(opcion, onOptionSelected)
+
+        // Filtrar solo las opciones que pertenecen a esta personalización
+        opciones.filter { it.personalizacion.id == personalizacion.id }.forEach { opcion ->
+            OpcionCard(opcion) { opcionSeleccionada, isSelected ->
+                // Actualizamos la selección de la opción
+                opcionSeleccionada.isSelected = isSelected
+
+                // Añadir o quitar la opción de la lista de opciones seleccionadas
+                opcionesSeleccionadas = if (isSelected) {
+                    opcionesSeleccionadas + opcionSeleccionada
+                } else {
+                    opcionesSeleccionadas - opcionSeleccionada
+                }
+
+                // Notificar que se seleccionó o deseleccionó una opción
+                onOptionSelected(opcionSeleccionada, isSelected)
+            }
         }
         Divider()
     }
+
+    // Actualizamos la lista de opciones en la personalización para que refleje solo las seleccionadas
+    personalizacion.opciones = opcionesSeleccionadas
 }
 
 @Composable
 fun OpcionCard(opcion: Opcion, onOptionSelected: (Opcion, Boolean) -> Unit) {
-    var isSelected by remember { mutableStateOf(false) }
+    var isSelected by remember { mutableStateOf(opcion.isSelected) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -239,14 +267,13 @@ fun OpcionCard(opcion: Opcion, onOptionSelected: (Opcion, Boolean) -> Unit) {
     ) {
         Checkbox(checked = isSelected, onCheckedChange = { checked ->
             isSelected = checked
-            // Lógica de sumar o restar dependiendo si está seleccionado o no
+            opcion.isSelected = checked // Asegurarse de que la opción tiene el estado actualizado
+            // Notificar que se seleccionó o deseleccionó la opción
             onOptionSelected(opcion, checked)
         })
         Text("Opción: ${opcion.nombre ?: "Sin nombre"} - ${opcion.precioAdicional ?: "N/A"} USD", style = MaterialTheme.typography.body2)
     }
 }
-
-// Funcionalidad para finalizar la compra
 fun concretarVenta(
     dispositivo: Dispositivo,
     adicionales: List<Adicional>,
@@ -254,30 +281,44 @@ fun concretarVenta(
     precioFinal: Double,
     token: String
 ) {
+    // Filtrar las personalizaciones que tienen opciones seleccionadas
+    val personalizacionesSeleccionadas = personalizaciones.filter { personalizacion ->
+        personalizacion.opciones.any { it.isSelected }
+    }.map { personalizacion ->
+        // Filtrar solo las opciones seleccionadas dentro de cada personalización
+        personalizacion.copy(opciones = personalizacion.opciones.filter { it.isSelected })
+    }
+
+    // Crear el objeto venta usando solo las personalizaciones seleccionadas
     val venta = Venta(
         fechaVenta = Clock.System.now().toString(),
         precioFinal = precioFinal,
         dispositivo = dispositivo,
-        personalizaciones = personalizaciones,
+        personalizaciones = personalizacionesSeleccionadas,
         adicionales = adicionales
     )
 
     CoroutineScope(Dispatchers.IO).launch {
         try {
             val urlVentas = "http://10.0.2.2:8080/api/ventas"
-            httpClient.post(urlVentas) {
+            val response = httpClient.post(urlVentas) {
                 headers {
                     append(HttpHeaders.Authorization, "Bearer $token")
                     append(HttpHeaders.ContentType, "application/json")
                 }
                 setBody(Json.encodeToString(venta))
             }
+
+            if (response.status.value in 200..299) {
+                println("Venta realizada correctamente")
+            } else {
+                println("Error al realizar la venta: ${response.status.description}")
+            }
         } catch (e: Exception) {
             println("Error al realizar la venta: ${e.message}")
         }
     }
 }
-
 // Función genérica para obtener datos de la API
 suspend inline fun <reified T> fetchData(endpoint: String, token: String): T {
     return try {
