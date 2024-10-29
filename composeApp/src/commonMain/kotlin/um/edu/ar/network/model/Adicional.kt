@@ -8,8 +8,6 @@ data class Adicional(
     val nombre: String,
     val descripcion: String,
     val precio: Double,
-    val precioGratis: Double,
     val dispositivo: Dispositivo,
     var isSelected: Boolean = false
 )
-

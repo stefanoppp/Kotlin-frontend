@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 data class Venta(
     val fechaVenta: String = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).toString(),
     val precioFinal: Double,
-    val dispositivo: Dispositivo,
-    val personalizaciones: List<Personalizacion>,
-    val adicionales: List<Adicional>
+    val dispositivo: DispositivoSimple,
+    val personalizaciones: List<PersonalizacionConOpciones>,
+    val adicionales: List<AdicionalSimple>
 )

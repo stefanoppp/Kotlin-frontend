@@ -1,5 +1,5 @@
 package um.edu.ar
-
+import kotlinx.datetime.Instant
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -18,7 +18,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -39,7 +38,7 @@ fun App() {
         var totalPrice by remember { mutableStateOf(0.0) }
         var isLoading by remember { mutableStateOf(false) }
         var errorMessage by remember { mutableStateOf<String?>(null) }
-        val token = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTczMDAwMDgzOCwiYXV0aCI6IlJPTEVfQURNSU4gUk9MRV9VU0VSIiwiaWF0IjoxNzI5OTE0NDM4fQ.j6Hbdqt8s9C9yecFnvoFWHplgJF5lhX2hBLOzImUpR1XiAFror8Y-BPOKsp6YqbNP4xuljpLAcp1KWQWo9e8Cg"
+        val token = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTczMDMwMjc0NywiYXV0aCI6IlJPTEVfQURNSU4gUk9MRV9VU0VSIiwiaWF0IjoxNzMwMjE2MzQ3fQ.KyJEYBqeFHdO17djKw-YvXc-6Ugd33Tx9f9UNj-esqD72phX5TVEtXeeFvJL0QVzVhWbniIyDpy3mJjky53n5g"
 
         Column(
             Modifier
@@ -281,23 +280,36 @@ fun concretarVenta(
     precioFinal: Double,
     token: String
 ) {
-    // Filtrar las personalizaciones que tienen opciones seleccionadas
-    val personalizacionesSeleccionadas = personalizaciones.filter { personalizacion ->
-        personalizacion.opciones.any { it.isSelected }
-    }.map { personalizacion ->
-        // Filtrar solo las opciones seleccionadas dentro de cada personalización
-        personalizacion.copy(opciones = personalizacion.opciones.filter { it.isSelected })
+    // Generar la fecha actual en formato ISO 8601 (UTC con "Z" al final)
+    val fechaVenta = Clock.System.now().toString()
+
+    // Crear el dispositivo en su versión simplificada
+    val dispositivoSimple = DispositivoSimple(dispositivo.id)
+
+    // Crear una lista de personalizaciones que incluya cada opción seleccionada como un objeto en `opcion`
+    val personalizacionesConOpciones = personalizaciones.flatMap { personalizacion ->
+        // Para cada opción seleccionada, crear una entrada con el id de la personalización y la opción
+        personalizacion.opciones.filter { it.isSelected }.map { opcion ->
+            PersonalizacionConOpciones(
+                id = personalizacion.id,
+                opcion = OpcionSimple(opcion.id)  // Incluimos la opción como un objeto simple
+            )
+        }
     }
 
-    // Crear el objeto venta usando solo las personalizaciones seleccionadas
+    // Crear adicionales en su versión simplificada, incluyendo solo los seleccionados
+    val adicionalesSimple = adicionales.filter { it.isSelected }.map { AdicionalSimple(it.id) }
+
+    // Construir el objeto Venta
     val venta = Venta(
-        fechaVenta = Clock.System.now().toString(),
+        fechaVenta = fechaVenta,
         precioFinal = precioFinal,
-        dispositivo = dispositivo,
-        personalizaciones = personalizacionesSeleccionadas,
-        adicionales = adicionales
+        dispositivo = dispositivoSimple,
+        personalizaciones = personalizacionesConOpciones,
+        adicionales = adicionalesSimple
     )
 
+    // Enviar el objeto Venta al servidor
     CoroutineScope(Dispatchers.IO).launch {
         try {
             val urlVentas = "http://10.0.2.2:8080/api/ventas"
@@ -319,6 +331,8 @@ fun concretarVenta(
         }
     }
 }
+
+
 // Función genérica para obtener datos de la API
 suspend inline fun <reified T> fetchData(endpoint: String, token: String): T {
     return try {
