@@ -1,5 +1,4 @@
 package um.edu.ar
-import kotlinx.datetime.Instant
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -19,8 +18,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import um.edu.ar.network.NetworkUtils.httpClient
@@ -38,7 +35,7 @@ fun App() {
         var totalPrice by remember { mutableStateOf(0.0) }
         var isLoading by remember { mutableStateOf(false) }
         var errorMessage by remember { mutableStateOf<String?>(null) }
-        val token = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTczMDMwMjc0NywiYXV0aCI6IlJPTEVfQURNSU4gUk9MRV9VU0VSIiwiaWF0IjoxNzMwMjE2MzQ3fQ.KyJEYBqeFHdO17djKw-YvXc-6Ugd33Tx9f9UNj-esqD72phX5TVEtXeeFvJL0QVzVhWbniIyDpy3mJjky53n5g"
+        val token = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTczMDU4MjkwOCwiYXV0aCI6IlJPTEVfQURNSU4gUk9MRV9VU0VSIiwiaWF0IjoxNzMwNDk2NTA4fQ.D4rzgR_rtpZlBCL_xyql8m2LXeKdr8wJnF539Cu6PM_OC8yks89TTaPgIhd0kmIQu0DNR9zluLmzFKRwAlKNcA"
 
         Column(
             Modifier
@@ -46,23 +43,17 @@ fun App() {
                 .verticalScroll(rememberScrollState()), // Permite scroll
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Botón para cargar dispositivos
             Button(onClick = {
-                isLoading = true
-                errorMessage = null // Resetear mensaje de error
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        val urlDispositivos = "http://10.0.2.2:8080/api/dispositivos"
-                        val response = httpClient.get(urlDispositivos) {
-                            headers {
-                                append("Authorization", "Bearer $token")
-                            }
-                        }
-                        dispositivos = Json.decodeFromString(response.bodyAsText())
+                        isLoading = true
+                        errorMessage = null
+                        // Usa fetchData para decodificar directamente la respuesta JSON en dispositivos
+                        dispositivos = fetchData("http://10.0.2.2:8080/api/dispositivos", token)
+                        isLoading = false
                     } catch (e: Exception) {
-                        dispositivos = listOf()
-                        errorMessage = "Error cargando dispositivos: ${e.message}"
-                    } finally {
+                        e.printStackTrace()  // Imprime el error completo
+                        errorMessage = "Error cargando dispositivos: ${e}"
                         isLoading = false
                     }
                 }
@@ -147,7 +138,7 @@ fun App() {
                         )
                     }
                 },
-                enabled = selectedDispositivo != null, // Habilitado si hay un dispositivo seleccionado
+                enabled = selectedDispositivo != null,
                 modifier = Modifier
                     .padding(16.dp)
                     .fillMaxWidth(), // Ajusta el tamaño del botón
@@ -280,28 +271,43 @@ fun concretarVenta(
     precioFinal: Double,
     token: String
 ) {
-    // Generar la fecha actual en formato ISO 8601 (UTC con "Z" al final)
     val fechaVenta = Clock.System.now().toString()
 
-    // Crear el dispositivo en su versión simplificada
-    val dispositivoSimple = DispositivoSimple(dispositivo.id)
+    val dispositivoSimple = DispositivoSimple(idExterno = dispositivo.idExterno)
 
-    // Crear una lista de personalizaciones que incluya cada opción seleccionada como un objeto en `opcion`
-    val personalizacionesConOpciones = personalizaciones.flatMap { personalizacion ->
-        // Para cada opción seleccionada, crear una entrada con el id de la personalización y la opción
-        personalizacion.opciones.filter { it.isSelected }.map { opcion ->
-            PersonalizacionConOpciones(
-                id = personalizacion.id,
-                opcion = OpcionSimple(opcion.id)  // Incluimos la opción como un objeto simple
-            )
+    // Verificar y depurar el estado de las opciones seleccionadas
+    personalizaciones.forEach { personalizacion ->
+        println("Personalización ID Externo: ${personalizacion.idExterno}")
+        personalizacion.opciones.forEach { opcion ->
+            println("    Opción ID Externo: ${opcion.idExterno}, Seleccionada: ${opcion.isSelected}")
         }
     }
 
-    // Crear adicionales en su versión simplificada, incluyendo solo los seleccionados
-    val adicionalesSimple = adicionales.filter { it.isSelected }.map { AdicionalSimple(it.id) }
+    // Filtrar personalizaciones con al menos una opción seleccionada
+    val personalizacionesConOpciones = personalizaciones
+        .mapNotNull { personalizacion ->
+            val opcionSeleccionada = personalizacion.opciones.find { it.isSelected }
+            if (opcionSeleccionada != null) {
+                PersonalizacionConOpciones(
+                    id = personalizacion.idExterno,
+                    opcion = OpcionSimple(id = opcionSeleccionada.idExterno)
+                )
+            } else {
+                null
+            }
+        }
 
-    // Construir el objeto Venta
-    val venta = Venta(
+    // Verificar el resultado de personalizaciones con opciones seleccionadas
+    personalizacionesConOpciones.forEach {
+        println("Personalización a enviar: ID Externo ${it.id}, Opción ID Externo: ${it.opcion.id}")
+    }
+
+    val adicionalesSimple = adicionales
+        .filter { it.isSelected }
+        .map { AdicionalSimple(id = it.idExterno) }
+
+    // Construir el objeto Venta y enviarlo
+    val ventaData = Venta(
         fechaVenta = fechaVenta,
         precioFinal = precioFinal,
         dispositivo = dispositivoSimple,
@@ -309,7 +315,6 @@ fun concretarVenta(
         adicionales = adicionalesSimple
     )
 
-    // Enviar el objeto Venta al servidor
     CoroutineScope(Dispatchers.IO).launch {
         try {
             val urlVentas = "http://10.0.2.2:8080/api/ventas"
@@ -318,7 +323,7 @@ fun concretarVenta(
                     append(HttpHeaders.Authorization, "Bearer $token")
                     append(HttpHeaders.ContentType, "application/json")
                 }
-                setBody(Json.encodeToString(venta))
+                setBody(Json.encodeToString(ventaData))
             }
 
             if (response.status.value in 200..299) {
@@ -332,8 +337,7 @@ fun concretarVenta(
     }
 }
 
-
-// Función genérica para obtener datos de la API
+// Función para obtener datos de la API con sustitución de valores null en campos numéricos
 suspend inline fun <reified T> fetchData(endpoint: String, token: String): T {
     return try {
         val response = httpClient.get(endpoint) {
@@ -341,8 +345,13 @@ suspend inline fun <reified T> fetchData(endpoint: String, token: String): T {
                 append(HttpHeaders.Authorization, "Bearer $token")
             }
         }
-        val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
-        json.decodeFromString(response.bodyAsText())
+        val responseBody = response.bodyAsText()
+
+        // Reemplaza null en idExterno con un valor predeterminado (ej. 0) antes de la deserialización
+        val cleanedJson = responseBody.replace(Regex("""("idExterno"\s*:\s*)null"""), "$10")
+
+        val json = Json { ignoreUnknownKeys = true }
+        json.decodeFromString(cleanedJson)
     } catch (e: Exception) {
         throw e
     }

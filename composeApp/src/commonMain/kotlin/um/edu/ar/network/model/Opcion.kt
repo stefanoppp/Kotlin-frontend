@@ -4,7 +4,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class Opcion(
-    val id: Int,
+    val id: Long,
+    val idExterno: Long,
     val codigo: String,
     val nombre: String,
     val descripcion: String,
