@@ -17,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -35,6 +36,7 @@ fun App() {
         var totalPrice by remember { mutableStateOf(0.0) }
         var isLoading by remember { mutableStateOf(false) }
         var errorMessage by remember { mutableStateOf<String?>(null) }
+        var showSuccessDialog by remember { mutableStateOf(false) }
         val token = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTczMDU4MjkwOCwiYXV0aCI6IlJPTEVfQURNSU4gUk9MRV9VU0VSIiwiaWF0IjoxNzMwNDk2NTA4fQ.D4rzgR_rtpZlBCL_xyql8m2LXeKdr8wJnF539Cu6PM_OC8yks89TTaPgIhd0kmIQu0DNR9zluLmzFKRwAlKNcA"
 
         Column(
@@ -134,7 +136,8 @@ fun App() {
                                 personalizacion.copy(opciones = personalizacion.opciones.filter { it.isSelected })
                             }, // Filtrar personalizaciones con opciones seleccionadas
                             precioFinal = totalPrice,
-                            token = token
+                            token = token,
+                            onSuccess = { showSuccessDialog = true }
                         )
                     }
                 },
@@ -150,6 +153,20 @@ fun App() {
                     text = "Finalizar Compra",
                     fontSize = 18.sp, // Ajusta el tamaño del texto si es necesario
                     fontWeight = FontWeight.Bold
+                )
+            }
+
+            // Alerta de éxito
+            if (showSuccessDialog) {
+                AlertDialog(
+                    onDismissRequest = { showSuccessDialog = false },
+                    title = { Text("Venta realizada") },
+                    text = { Text("La venta se ha enviado exitosamente.") },
+                    confirmButton = {
+                        Button(onClick = { showSuccessDialog = false }) {
+                            Text("OK")
+                        }
+                    }
                 )
             }
         }
@@ -264,26 +281,19 @@ fun OpcionCard(opcion: Opcion, onOptionSelected: (Opcion, Boolean) -> Unit) {
         Text("Opción: ${opcion.nombre ?: "Sin nombre"} - ${opcion.precioAdicional ?: "N/A"} USD", style = MaterialTheme.typography.body2)
     }
 }
+
 fun concretarVenta(
     dispositivo: Dispositivo,
     adicionales: List<Adicional>,
     personalizaciones: List<Personalizacion>,
     precioFinal: Double,
-    token: String
+    token: String,
+    onSuccess: () -> Unit
 ) {
     val fechaVenta = Clock.System.now().toString()
 
     val dispositivoSimple = DispositivoSimple(idExterno = dispositivo.idExterno)
 
-    // Verificar y depurar el estado de las opciones seleccionadas
-    personalizaciones.forEach { personalizacion ->
-        println("Personalización ID Externo: ${personalizacion.idExterno}")
-        personalizacion.opciones.forEach { opcion ->
-            println("    Opción ID Externo: ${opcion.idExterno}, Seleccionada: ${opcion.isSelected}")
-        }
-    }
-
-    // Filtrar personalizaciones con al menos una opción seleccionada
     val personalizacionesConOpciones = personalizaciones
         .mapNotNull { personalizacion ->
             val opcionSeleccionada = personalizacion.opciones.find { it.isSelected }
@@ -297,16 +307,10 @@ fun concretarVenta(
             }
         }
 
-    // Verificar el resultado de personalizaciones con opciones seleccionadas
-    personalizacionesConOpciones.forEach {
-        println("Personalización a enviar: ID Externo ${it.id}, Opción ID Externo: ${it.opcion.id}")
-    }
-
     val adicionalesSimple = adicionales
         .filter { it.isSelected }
         .map { AdicionalSimple(id = it.idExterno) }
 
-    // Construir el objeto Venta y enviarlo
     val ventaData = Venta(
         fechaVenta = fechaVenta,
         precioFinal = precioFinal,
@@ -327,7 +331,9 @@ fun concretarVenta(
             }
 
             if (response.status.value in 200..299) {
-                println("Venta realizada correctamente")
+                withContext(Dispatchers.Main) {
+                    onSuccess()
+                }
             } else {
                 println("Error al realizar la venta: ${response.status.description}")
             }
