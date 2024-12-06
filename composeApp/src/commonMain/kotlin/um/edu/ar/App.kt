@@ -37,7 +37,7 @@ fun App() {
         var isLoading by remember { mutableStateOf(false) }
         var errorMessage by remember { mutableStateOf<String?>(null) }
         var showSuccessDialog by remember { mutableStateOf(false) }
-        val token = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTczMjI4NjMyMywiYXV0aCI6IlJPTEVfQURNSU4gUk9MRV9VU0VSIiwiaWF0IjoxNzMyMTk5OTIzfQ.tnCtOnbynRr5_5j09Xcm1C9VqKw49WwNSoJLiLq7bcTyo3GB22iz26tOuanWDnYwOCjaanzzSNGcbp9dlEs01Q"
+        val token = TOKEN
 
         Column(
             Modifier
